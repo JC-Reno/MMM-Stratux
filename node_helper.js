@@ -1,22 +1,22 @@
 /* MagicMirror²
- * Module: MMM-Stratux — node_helper.js (REST polling)
- * MIT Licensed.
+ * Module: MMM-Stratux — node_helper.js (WebSocket)
  */
 
 "use strict";
 
 const NodeHelper = require("node_helper");
+const WebSocket = require("ws");
 const fetch = require("node-fetch");
 
 module.exports = NodeHelper.create({
 
-  config: null,
-  pollTimer: null,
+  ws: null,
   statusTimer: null,
-  connected: false,
+  pruneTimer: null,
+  aircraft: {},
 
   start() {
-    console.log(`[${this.name}] REST helper started.`);
+    console.log("[MMM-Stratux] node_helper started.");
   },
 
   stop() {
@@ -24,110 +24,94 @@ module.exports = NodeHelper.create({
   },
 
   socketNotificationReceived(notification, payload) {
-    if (notification === "STRATUX_CONFIG") {
-      this.config = payload;
+    if (notification === "STRATUX_CONNECT") {
+      this.host = payload.host;
+      this.statusPollMs = payload.statusPollMs;
+      this.pruneSeconds = payload.pruneSeconds;
+
       this._cleanup();
-      this._startPolling();
+      this._connectWebSocket();
       this._startStatusPolling();
+      this._startPruneTimer();
     }
   },
 
-  _startPolling() {
-    if (!this.config) return;
-    if (this.pollTimer) clearInterval(this.pollTimer);
+  _connectWebSocket() {
+    const url = `ws://${this.host}/traffic`;
+    console.log("[MMM-Stratux] Connecting WebSocket:", url);
 
-    const interval = this.config.pollIntervalMs || 2000;
+    this.ws = new WebSocket(url);
+
+    this.ws.on("open", () => {
+      console.log("[MMM-Stratux] WebSocket connected.");
+      this.sendSocketNotification("STRATUX_CONNECTED", {});
+    });
+
+    this.ws.on("message", msg => {
+      try {
+        const ac = JSON.parse(msg);
+        this.sendSocketNotification("STRATUX_TRAFFIC", ac);
+      } catch (err) {
+        console.error("[MMM-Stratux] WS JSON error:", err);
+      }
+    });
+
+    this.ws.on("close", () => {
+      console.log("[MMM-Stratux] WebSocket closed.");
+      this.sendSocketNotification("STRATUX_DISCONNECTED", {});
+      setTimeout(() => this._connectWebSocket(), 3000);
+    });
+
+    this.ws.on("error", err => {
+      console.error("[MMM-Stratux] WebSocket error:", err);
+    });
+  },
+
+  _startStatusPolling() {
+    if (this.statusTimer) clearInterval(this.statusTimer);
 
     const poll = async () => {
       try {
-        const base = `http://${this.config.stratuxHost}`;
-
-        const traffic = await this._fetchJson(`${base}/getTraffic`);
-        const situation = await this._fetchJson(`${base}/getSituation`);
-
-        // ⭐ Mark connected as soon as Stratux responds, even if traffic is empty
-        if (!this.connected) {
-          this.connected = true;
-          this.sendSocketNotification("STRATUX_CONNECTED", {});
-        }
-
-        const normalizedTraffic = this._normalizeTraffic(traffic || []);
-        const normalizedSituation = situation || null;
-
-        this.sendSocketNotification("STRATUX_TRAFFIC_BULK", {
-          traffic: normalizedTraffic,
-          situation: normalizedSituation
-        });
+        const url = `http://${this.host}/getStatus`;
+        const res = await fetch(url);
+        const json = await res.json();
+        this.sendSocketNotification("STRATUX_STATUS", json);
       } catch (err) {
-        console.error(`[${this.name}] Traffic poll error:`, err.message);
-        if (this.connected) {
-          this.connected = false;
-          this.sendSocketNotification("STRATUX_DISCONNECTED", {});
-        }
+        console.error("[MMM-Stratux] Status poll error:", err);
       }
     };
 
     poll();
-    this.pollTimer = setInterval(poll, interval);
+    this.statusTimer = setInterval(poll, this.statusPollMs);
   },
 
-  _startStatusPolling() {
-    if (!this.config) return;
-    if (this.statusTimer) clearInterval(this.statusTimer);
+  _startPruneTimer() {
+    if (this.pruneTimer) clearInterval(this.pruneTimer);
 
-    const interval = this.config.statusPollMs || 5000;
+    this.pruneTimer = setInterval(() => {
+      const now = Date.now();
+      const removed = [];
 
-    const pollStatus = async () => {
-      try {
-        const base = `http://${this.config.stratuxHost}`;
-        const status = await this._fetchJson(`${base}/getStatus`);
-
-        // ⭐ Status also proves connectivity
-        if (!this.connected) {
-          this.connected = true;
-          this.sendSocketNotification("STRATUX_CONNECTED", {});
+      Object.keys(this.aircraft).forEach(key => {
+        const ac = this.aircraft[key];
+        if (now - (ac._receivedAt || 0) > this.pruneSeconds * 1000) {
+          removed.push(key);
+          delete this.aircraft[key];
         }
+      });
 
-        this.sendSocketNotification("STRATUX_STATUS", status || null);
-      } catch (err) {
-        console.error(`[${this.name}] Status poll error:`, err.message);
+      if (removed.length > 0) {
+        this.sendSocketNotification("STRATUX_PRUNED", removed);
       }
-    };
-
-    pollStatus();
-    this.statusTimer = setInterval(pollStatus, interval);
-  },
-
-  async _fetchJson(url) {
-    const res = await fetch(url, { timeout: 4000 });
-    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-    return res.json();
-  },
-
-  _normalizeTraffic(raw) {
-    if (!Array.isArray(raw)) return [];
-
-    return raw.map(ac => ({
-      Icao_addr: ac.Icao_addr || ac.icao || null,
-      Tail: ac.Tail || ac.tail || "",
-      Alt: ac.Alt || ac.alt || 0,
-      Vvel: ac.Vvel || ac.vvel || 0,
-      Speed: ac.Speed || ac.speed || 0,
-      Speed_valid: ac.Speed_valid ?? true,
-      Track: ac.Track || ac.track || 0,
-      Lat: ac.Lat || ac.lat || null,
-      Lon: ac.Lon || ac.lon || null,
-      Distance: ac.Distance || ac.distance || null,
-      Bearing: ac.Bearing || ac.bearing || null,
-      OnGround: ac.OnGround || ac.onGround || false,
-      Position_valid: ac.Position_valid ?? (ac.Lat != null && ac.Lon != null),
-      Squawk: ac.Squawk || ac.squawk || null,
-      SignalLevel: ac.SignalLevel || ac.signalLevel || null
-    }));
+    }, 5000);
   },
 
   _cleanup() {
-    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
-    if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
+    if (this.ws) {
+      try { this.ws.close(); } catch { }
+      this.ws = null;
+    }
+    if (this.statusTimer) clearInterval(this.statusTimer);
+    if (this.pruneTimer) clearInterval(this.pruneTimer);
   }
 });
