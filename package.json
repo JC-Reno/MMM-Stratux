@@ -1,0 +1,11 @@
+{
+  "name": "MMM-StratuxTrafficWeather",
+  "version": "1.0.0",
+  "description": "MagicMirror module for Stratux ADS-B traffic and weather",
+  "main": "MMM-StratuxTrafficWeather.js",
+  "author": "John",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  }
+}
