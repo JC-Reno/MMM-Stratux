@@ -7,12 +7,11 @@
         staleSeconds: 30,
           pruneSeconds: 60,
             statusPollMs: 5000,
-              maxDistanceNm: 0,
+              maxDistanceNm: 0,        // 0 = show everything
                 showOnGround: false,
                   showSignal: false,
                     sortBy: "distance",
-                      updateInterval: 1000,
-                        distanceUnit: "nm",
-                          altitudeUnit: "ft"
+                      distanceUnit: "nm",
+                        altitudeUnit: "ft",
   }
-}
+},

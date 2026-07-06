@@ -1,4 +1,4 @@
-/* MagicMirror²
+/* MagicMirror�
  * Module: MMM-Stratux
  * Description: Displays live ADS-B traffic data from a local Stratux receiver.
  *
@@ -12,7 +12,7 @@ Module.register("MMM-Stratux", {
 
   /* -- Default configuration ----------------------------------------------- */
   defaults: {
-    stratuxHost: "192.168.1.249",   // IP / hostname of the Stratux device
+    stratuxHost: "192.168.10.1",   // IP / hostname of the Stratux device
     maxAircraft: 10,               // Max rows shown in the table
     staleSeconds: 30,               // Grey-out aircraft older than this
     pruneSeconds: 60,               // Remove aircraft older than this
@@ -24,24 +24,16 @@ Module.register("MMM-Stratux", {
     updateInterval: 1000,             // DOM refresh interval (ms)
     distanceUnit: "nm",             // "nm" (nautical miles) or "mi" (statute)
     altitudeUnit: "ft",             // "ft" or "m"
-
-    // Map options
-    showMap: true,
-    mapZoom: 9
   },
 
   /* -- Module lifecycle ---------------------------------------------------- */
   start() {
-    Log.info(`${this.name}: Starting…`);
+    Log.info(`${this.name}: Starting�`);
     this.aircraft = {};   // keyed by ICAO hex string
     this.status = null; // /getStatus payload
     this.situation = null; // /getSituation payload
     this.connected = false;
     this.lastUpdate = null;
-
-    // Map state
-    this.map = null;
-    this.mapMarkers = { ownship: null, traffic: {} };
 
     this.sendSocketNotification("STRATUX_CONNECT", {
       host: this.config.stratuxHost,
@@ -88,13 +80,7 @@ Module.register("MMM-Stratux", {
       case "STRATUX_PRUNED":
         // node_helper removed stale keys; mirror the removal
         if (Array.isArray(payload)) {
-          payload.forEach(k => {
-            delete this.aircraft[k];
-            if (this.mapMarkers.traffic[k]) {
-              this.map.removeLayer(this.mapMarkers.traffic[k]);
-              delete this.mapMarkers.traffic[k];
-            }
-          });
+          payload.forEach(k => delete this.aircraft[k]);
         }
         break;
     }
@@ -110,7 +96,7 @@ Module.register("MMM-Stratux", {
     if (!this.connected) {
       const msg = document.createElement("div");
       msg.className = "mmm-stratux-offline";
-      msg.textContent = `Connecting to Stratux at ${this.config.stratuxHost}…`;
+      msg.textContent = `Connecting to Stratux at ${this.config.stratuxHost}�`;
       wrapper.appendChild(msg);
       return wrapper;
     }
@@ -133,15 +119,6 @@ Module.register("MMM-Stratux", {
 
     list = list.slice(0, this.config.maxAircraft);
 
-    // Map ABOVE the table
-    if (this.config.showMap) {
-      const mapDiv = document.createElement("div");
-      mapDiv.id = "mmm-stratux-map";
-      mapDiv.className = "mmm-stratux-map";
-      wrapper.appendChild(mapDiv);
-      setTimeout(() => this._renderMap(list), 0);
-    }
-
     if (list.length === 0) {
       const msg = document.createElement("div");
       msg.className = "mmm-stratux-no-traffic";
@@ -160,7 +137,7 @@ Module.register("MMM-Stratux", {
 
     const title = document.createElement("span");
     title.className = "mmm-stratux-title";
-    title.textContent = "✈ ADS-B Traffic";
+    title.textContent = "? ADS-B Traffic";
     hdr.appendChild(title);
 
     const dot = document.createElement("span");
@@ -170,11 +147,11 @@ Module.register("MMM-Stratux", {
     if (this.status) {
       const meta = document.createElement("span");
       meta.className = "mmm-stratux-meta";
-      const gps = this.status.GPS_connected ? "GPS ✓" : "GPS ✗";
-      const uat = `UAT ${this.status.UAT_messages_last_minute ?? "?"}/min`;
-      const es = `ES ${this.status.ES_messages_last_minute ?? "?"}/min`;
+      const gps = this.status.GPS_connected ? "GPS ?" : "GPS ?";
+      const uat = `UAT ${this.status.UAT_messages_last_minute ?? "�"}/min`;
+      const es = `ES ${this.status.ES_messages_last_minute ?? "�"}/min`;
       const acCt = Object.keys(this.aircraft).length;
-      meta.textContent = `${gps} • ${uat} • ${es} • ${acCt} target${acCt !== 1 ? "s" : ""}`;
+      meta.textContent = `${gps} � ${uat} � ${es} � ${acCt} target${acCt !== 1 ? "s" : ""}`;
       hdr.appendChild(meta);
     }
 
@@ -214,9 +191,63 @@ Module.register("MMM-Stratux", {
       const tail = ac.Tail && ac.Tail.trim() ? ac.Tail.trim() : ac._key;
       const tdId = row.insertCell(); tdId.className = "col-tail";
       tdId.textContent = tail;
+      if (ac.Squawk === 7700) tdId.textContent += " ? EMER";
+      else if (ac.Squawk === 7600) tdId.textContent += " ?? NORDO";
+      else if (ac.Squawk === 7500) tdId.textContent += " ? HIJACK";
 
       // Altitude
       const tdAlt = row.insertCell(); tdAlt.className = "col-alt";
       tdAlt.textContent = this.config.altitudeUnit === "m"
-        ? (ac.Alt != null ? `${Math.round(ac.Alt * 0.3048).toLocaleString()} m` : "–")
-        : (ac.Alt != null ? ac
+        ? (ac.Alt != null ? `${Math.round(ac.Alt * 0.3048).toLocaleString()} m` : "�")
+        : (ac.Alt != null ? ac.Alt.toLocaleString() : "�");
+
+      // Vertical speed
+      const tdVs = row.insertCell(); tdVs.className = "col-vs";
+      tdVs.textContent = vvel > 200 ? `? ${vvel.toLocaleString()}`
+        : vvel < -200 ? `? ${Math.abs(vvel).toLocaleString()}`
+          : "?";
+
+      // Ground speed
+      const tdSpd = row.insertCell(); tdSpd.className = "col-spd";
+      tdSpd.textContent = ac.Speed_valid && ac.Speed != null ? Math.round(ac.Speed) : "�";
+
+      // Track
+      const tdHdg = row.insertCell(); tdHdg.className = "col-hdg";
+      tdHdg.textContent = ac.Track != null ? `${Math.round(ac.Track)}�` : "�";
+
+      // Distance
+      const tdDist = row.insertCell(); tdDist.className = "col-dist";
+      const nm = this._distNm(ac);
+      tdDist.textContent = nm != null
+        ? (this.config.distanceUnit === "mi" ? `${(nm * 1.15078).toFixed(1)} mi` : `${nm.toFixed(1)} nm`)
+        : "�";
+
+      // Bearing
+      const tdBrg = row.insertCell(); tdBrg.className = "col-brg";
+      tdBrg.textContent = ac.Bearing != null
+        ? `${Math.round(ac.Bearing)}� ${this._compassRose(ac.Bearing)}`
+        : "�";
+
+      // Signal (optional)
+      if (this.config.showSignal) {
+        const tdSig = row.insertCell(); tdSig.className = "col-sig";
+        tdSig.textContent = ac.SignalLevel != null ? `${ac.SignalLevel.toFixed(0)} dB` : "�";
+      }
+    });
+
+    return table;
+  },
+
+  _distNm(ac) {
+    if (ac.Distance == null) return null;
+    return ac.Distance / 6076.12;   // Stratux Distance field is in feet
+  },
+
+  _compassRose(deg) {
+    const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "N"];
+    return dirs[Math.round(((deg % 360) + 360) % 360 / 45)];
+  },
+
+  getStyles() { return ["MMM-Stratux.css"]; },
+});
+

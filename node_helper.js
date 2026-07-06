@@ -1,117 +1,116 @@
-/* MagicMirror²
- * Module: MMM-Stratux — node_helper.js (WebSocket)
+/* MagicMirror�
+ * Module: MMM-Stratux � node_helper.js
+ * MIT Licensed.
  */
 
 "use strict";
 
 const NodeHelper = require("node_helper");
 const WebSocket = require("ws");
-const fetch = require("node-fetch");
+const http = require("http");
 
 module.exports = NodeHelper.create({
 
-  ws: null,
-  statusTimer: null,
-  pruneTimer: null,
+  ws: null, config: null,
+  reconnectTimer: null, statusTimer: null, pruneTimer: null,
   aircraft: {},
+  reconnectDelay: 2000,
+  MAX_RECONNECT: 30000,
 
-  start() {
-    console.log("[MMM-Stratux] node_helper started.");
-  },
-
-  stop() {
-    this._cleanup();
-  },
+  start() { console.log(`[${this.name}] Helper started.`); },
+  stop() { this._cleanup(); },
 
   socketNotificationReceived(notification, payload) {
     if (notification === "STRATUX_CONNECT") {
-      this.host = payload.host;
-      this.statusPollMs = payload.statusPollMs;
-      this.pruneSeconds = payload.pruneSeconds;
-
+      this.config = payload;
       this._cleanup();
-      this._connectWebSocket();
-      this._startStatusPolling();
-      this._startPruneTimer();
+      this._connect();
+      this._startStatusPoller();
+      this._startPruner();
     }
   },
 
-  _connectWebSocket() {
-    const url = `ws://${this.host}/traffic`;
-    console.log("[MMM-Stratux] Connecting WebSocket:", url);
+  _connect() {
+    const url = `ws://${this.config.host}/traffic`;
+    console.log(`[${this.name}] Connecting to ${url}`);
 
-    this.ws = new WebSocket(url);
+    try { this.ws = new WebSocket(url, { handshakeTimeout: 6000 }); }
+    catch (err) { console.error(`[${this.name}] WS error:`, err.message); this._scheduleReconnect(); return; }
 
     this.ws.on("open", () => {
-      console.log("[MMM-Stratux] WebSocket connected.");
+      console.log(`[${this.name}] Connected.`);
+      this.reconnectDelay = 2000;
       this.sendSocketNotification("STRATUX_CONNECTED", {});
     });
 
-    this.ws.on("message", msg => {
-      try {
-        const ac = JSON.parse(msg);
+    this.ws.on("message", (data) => {
+      let ac;
+      try { ac = JSON.parse(data.toString()); } catch { return; }
+      if (ac && ac.Icao_addr != null) {
+        const key = ac.Icao_addr.toString(16).toUpperCase().padStart(6, "0");
+        this.aircraft[key] = { _receivedAt: Date.now() };
         this.sendSocketNotification("STRATUX_TRAFFIC", ac);
-      } catch (err) {
-        console.error("[MMM-Stratux] WS JSON error:", err);
       }
     });
 
+    this.ws.on("error", err => console.error(`[${this.name}] WS error:`, err.message));
     this.ws.on("close", () => {
-      console.log("[MMM-Stratux] WebSocket closed.");
       this.sendSocketNotification("STRATUX_DISCONNECTED", {});
-      setTimeout(() => this._connectWebSocket(), 3000);
-    });
-
-    this.ws.on("error", err => {
-      console.error("[MMM-Stratux] WebSocket error:", err);
+      this._scheduleReconnect();
     });
   },
 
-  _startStatusPolling() {
+  _scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; this._connect(); }, this.reconnectDelay);
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.MAX_RECONNECT);
+  },
+
+  _startStatusPoller() {
     if (this.statusTimer) clearInterval(this.statusTimer);
-
-    const poll = async () => {
-      try {
-        const url = `http://${this.host}/getStatus`;
-        const res = await fetch(url);
-        const json = await res.json();
-        this.sendSocketNotification("STRATUX_STATUS", json);
-      } catch (err) {
-        console.error("[MMM-Stratux] Status poll error:", err);
-      }
+    const poll = () => {
+      this._fetchJson("/getStatus", "STRATUX_STATUS");
+      this._fetchJson("/getSituation", "STRATUX_SITUATION");
     };
-
     poll();
-    this.statusTimer = setInterval(poll, this.statusPollMs);
+    this.statusTimer = setInterval(poll, this.config.statusPollMs || 5000);
   },
 
-  _startPruneTimer() {
-    if (this.pruneTimer) clearInterval(this.pruneTimer);
-
-    this.pruneTimer = setInterval(() => {
-      const now = Date.now();
-      const removed = [];
-
-      Object.keys(this.aircraft).forEach(key => {
-        const ac = this.aircraft[key];
-        if (now - (ac._receivedAt || 0) > this.pruneSeconds * 1000) {
-          removed.push(key);
-          delete this.aircraft[key];
-        }
-      });
-
-      if (removed.length > 0) {
-        this.sendSocketNotification("STRATUX_PRUNED", removed);
+  _fetchJson(path, notification) {
+    const req = http.request(
+      { hostname: this.config.host, port: 80, path, method: "GET", timeout: 4000 },
+      res => {
+        let body = "";
+        res.on("data", c => { body += c; });
+        res.on("end", () => {
+          try { this.sendSocketNotification(notification, JSON.parse(body)); }
+          catch { console.warn(`[${this.name}] Bad JSON from ${path}`); }
+        });
       }
-    }, 5000);
+    );
+    req.on("error", err => console.debug(`[${this.name}] HTTP ${path}: ${err.message}`));
+    req.on("timeout", () => req.destroy());
+    req.end();
+  },
+
+  _startPruner() {
+    if (this.pruneTimer) clearInterval(this.pruneTimer);
+    const pruneMs = (this.config.pruneSeconds || 60) * 1000;
+    this.pruneTimer = setInterval(() => {
+      const now = Date.now(), pruned = [];
+      for (const [key, meta] of Object.entries(this.aircraft)) {
+        if (now - meta._receivedAt > pruneMs) { delete this.aircraft[key]; pruned.push(key); }
+      }
+      if (pruned.length) this.sendSocketNotification("STRATUX_PRUNED", pruned);
+    }, 10000);
   },
 
   _cleanup() {
-    if (this.ws) {
-      try { this.ws.close(); } catch { }
-      this.ws = null;
-    }
-    if (this.statusTimer) clearInterval(this.statusTimer);
-    if (this.pruneTimer) clearInterval(this.pruneTimer);
-  }
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
+    if (this.pruneTimer) { clearInterval(this.pruneTimer); this.pruneTimer = null; }
+    if (this.ws) { this.ws.removeAllListeners(); try { this.ws.terminate(); } catch { } this.ws = null; }
+    this.aircraft = {}; this.reconnectDelay = 2000;
+  },
 });
+

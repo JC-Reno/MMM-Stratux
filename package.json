@@ -1,12 +1,24 @@
 {
   "name": "MMM-Stratux",
   "version": "1.0.0",
-  "description": "MagicMirror module for Stratux ADS-B traffic",
+  "description": "MagicMirror² module — live ADS-B traffic from a local Stratux receiver",
   "main": "MMM-Stratux.js",
-  "author": "John",
+  "scripts": {
+    "start": "echo \"Use MagicMirror to start this module.\""
+  },
+  "keywords": [
+    "MagicMirror",
+    "Stratux",
+    "ADS-B",
+    "aviation",
+    "traffic"
+  ],
+  "author": "John Cole",
   "license": "MIT",
   "dependencies": {
-    "ws": "^8.13.0",
-    "node-fetch": "^2.6.7"
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
