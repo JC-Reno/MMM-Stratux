@@ -41,11 +41,15 @@ module.exports = NodeHelper.create({
     const poll = async () => {
       try {
         const base = `http://${this.config.stratuxHost}`;
+
         const traffic = await this._fetchJson(`${base}/getTraffic`);
         const situation = await this._fetchJson(`${base}/getSituation`);
 
-        this.connected = true;
-        this.sendSocketNotification("STRATUX_CONNECTED", {});
+        // ⭐ Mark connected as soon as Stratux responds, even if traffic is empty
+        if (!this.connected) {
+          this.connected = true;
+          this.sendSocketNotification("STRATUX_CONNECTED", {});
+        }
 
         const normalizedTraffic = this._normalizeTraffic(traffic || []);
         const normalizedSituation = situation || null;
@@ -77,6 +81,13 @@ module.exports = NodeHelper.create({
       try {
         const base = `http://${this.config.stratuxHost}`;
         const status = await this._fetchJson(`${base}/getStatus`);
+
+        // ⭐ Status also proves connectivity
+        if (!this.connected) {
+          this.connected = true;
+          this.sendSocketNotification("STRATUX_CONNECTED", {});
+        }
+
         this.sendSocketNotification("STRATUX_STATUS", status || null);
       } catch (err) {
         console.error(`[${this.name}] Status poll error:`, err.message);

@@ -61,6 +61,7 @@ Module.register("MMM-Stratux", {
 
       case "STRATUX_STATUS":
         this.status = payload;
+        this.connected = true;   // ⭐ status proves connectivity
         break;
 
       case "STRATUX_TRAFFIC_BULK":

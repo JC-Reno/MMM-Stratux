@@ -1,6 +1,6 @@
 {
   "name": "MMM-Stratux",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "MagicMirror² module — live ADS-B traffic + map from a local Stratux receiver (REST polling)",
   "main": "MMM-Stratux.js",
   "scripts": {
