@@ -355,13 +355,12 @@ Module.register("MMM-Stratux", {
     return dirs[Math.round(((deg % 360) + 360) % 360 / 45)];
   },
 
-  getStyles() { return ["MMM-Stratux.css"]; },
-});
+  getStyles() {
+    return ["MMM-Stratux.css", "map/leaflet.css"];
+  },
 
-getStyles() {
-  return ["MMM-Stratux.css", "map/leaflet.css"];
-},
+  getScripts() {
+    return ["map/leaflet.js", "map/leaflet.rotatedMarker.js"];
+  });
 
-getScripts() {
-  return ["map/leaflet.js", "map/leaflet.rotatedMarker.js"];
-}
+
