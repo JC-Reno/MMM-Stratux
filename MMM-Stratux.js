@@ -343,7 +343,7 @@ Module.register("MMM-Stratux", {
         delete this.mapMarkers.traffic[key];
       }
     });
-  }
+  },
 
   _distNm(ac) {
     if (ac.Distance == null) return null;
