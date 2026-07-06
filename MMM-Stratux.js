@@ -12,7 +12,7 @@ Module.register("MMM-Stratux", {
 
   /* -- Default configuration ----------------------------------------------- */
   defaults: {
-    stratuxHost: "192.168.10.1",   // IP / hostname of the Stratux device
+    stratuxHost: "192.168.1.249",   // IP / hostname of the Stratux device
     maxAircraft: 10,               // Max rows shown in the table
     staleSeconds: 30,               // Grey-out aircraft older than this
     pruneSeconds: 60,               // Remove aircraft older than this
@@ -22,7 +22,7 @@ Module.register("MMM-Stratux", {
     showSignal: false,            // Show signal-strength column
     sortBy: "distance",       // "distance" | "altitude" | "tail"
     updateInterval: 1000,             // DOM refresh interval (ms)
-    distanceUnit: "nm",             // "nm" (nautical miles) or "mi" (statute)
+    distanceUnit: "mi",             // "nm" (nautical miles) or "mi" (statute)
     altitudeUnit: "ft",             // "ft" or "m"
   },
 
