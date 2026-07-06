@@ -119,6 +119,15 @@ Module.register("MMM-Stratux", {
 
     list = list.slice(0, this.config.maxAircraft);
 
+    // ⭐ MAP ABOVE TABLE
+    const mapDiv = document.createElement("div");
+    mapDiv.id = "mmm-stratux-map";
+    mapDiv.className = "mmm-stratux-map";
+    wrapper.appendChild(mapDiv);
+
+    // Render map asynchronously so DOM is ready
+    setTimeout(() => this._renderMap(list), 0);
+
     if (list.length === 0) {
       const msg = document.createElement("div");
       msg.className = "mmm-stratux-no-traffic";
@@ -129,6 +138,7 @@ Module.register("MMM-Stratux", {
 
     wrapper.appendChild(this._buildTable(list, now));
     return wrapper;
+
   },
 
   _buildHeader() {
@@ -237,6 +247,103 @@ Module.register("MMM-Stratux", {
 
     return table;
   },
+  /* ------------------------------------------------------------------------
+   * MAP RENDERING (Leaflet)
+   * ---------------------------------------------------------------------- */
+  _renderMap(list) {
+    const mapDiv = document.getElementById("mmm-stratux-map");
+    if (!mapDiv) return;
+
+    let centerLat = null;
+    let centerLon = null;
+
+    // Prefer ownship from /getSituation
+    if (this.situation && this.situation.GPSLatitude && this.situation.GPSLongitude) {
+      centerLat = this.situation.GPSLatitude;
+      centerLon = this.situation.GPSLongitude;
+    } else if (list.length > 0) {
+      centerLat = list[0].Lat;
+      centerLon = list[0].Lng;
+    }
+
+    if (centerLat == null || centerLon == null) return;
+
+    if (!this.map) {
+      this.map = L.map("mmm-stratux-map").setView([centerLat, centerLon], 9);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18
+      }).addTo(this.map);
+    } else {
+      this.map.setView([centerLat, centerLon]);
+      this.map.invalidateSize();
+    }
+
+    // Ownship marker
+    if (this.situation && this.situation.GPSLatitude && this.situation.GPSLongitude) {
+      const pos = [this.situation.GPSLatitude, this.situation.GPSLongitude];
+
+      if (!this.mapMarkers) this.mapMarkers = { ownship: null, traffic: {} };
+
+      if (!this.mapMarkers.ownship) {
+        const ownIcon = L.icon({
+          iconUrl: "modules/MMM-Stratux/icons/ownship.svg",
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        this.mapMarkers.ownship = L.marker(pos, { icon: ownIcon }).addTo(this.map);
+      } else {
+        this.mapMarkers.ownship.setLatLng(pos);
+      }
+    }
+
+    // Traffic markers
+    const seen = new Set();
+
+    list.forEach(ac => {
+      if (ac.Lat == null || ac.Lng == null) return;
+
+      const key = ac._key;
+      const pos = [ac.Lat, ac.Lng];
+      const track = ac.Track || 0;
+
+      seen.add(key);
+
+      if (!this.mapMarkers.traffic[key]) {
+        const planeIcon = L.icon({
+          iconUrl: "modules/MMM-Stratux/icons/plane-up.svg",
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+
+        const marker = L.marker(pos, {
+          icon: planeIcon,
+          title: ac.Tail || key
+        }).addTo(this.map);
+
+        if (typeof marker.setRotationAngle === "function") {
+          marker.setRotationAngle(track);
+        }
+
+        this.mapMarkers.traffic[key] = marker;
+      } else {
+        const marker = this.mapMarkers.traffic[key];
+        marker.setLatLng(pos);
+
+        if (typeof marker.setRotationAngle === "function") {
+          marker.setRotationAngle(track);
+        }
+      }
+    });
+
+    // Remove stale markers
+    Object.keys(this.mapMarkers.traffic).forEach(key => {
+      if (!seen.has(key)) {
+        this.map.removeLayer(this.mapMarkers.traffic[key]);
+        delete this.mapMarkers.traffic[key];
+      }
+    });
+  }
 
   _distNm(ac) {
     if (ac.Distance == null) return null;
@@ -251,3 +358,10 @@ Module.register("MMM-Stratux", {
   getStyles() { return ["MMM-Stratux.css"]; },
 });
 
+getStyles() {
+  return ["MMM-Stratux.css", "map/leaflet.css"];
+},
+
+getScripts() {
+  return ["map/leaflet.js", "map/leaflet.rotatedMarker.js"];
+}
