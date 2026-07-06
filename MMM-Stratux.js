@@ -361,6 +361,5 @@ Module.register("MMM-Stratux", {
 
   getScripts() {
     return ["map/leaflet.js", "map/leaflet.rotatedMarker.js"];
-  });
-
-
+  }
+});
