@@ -356,10 +356,17 @@ Module.register("MMM-Stratux", {
   },
 
   getStyles() {
-    return ["MMM-Stratux.css", "map/leaflet.css"];
+    return [
+      "MMM-Stratux.css",
+      "modules/MMM-Stratux/map/leaflet.css"
+    ];
   },
 
   getScripts() {
-    return ["map/leaflet.js", "map/leaflet.rotatedMarker.js"];
+    return [
+      "modules/MMM-Stratux/map/leaflet.js",
+      "modules/MMM-Stratux/map/leaflet.rotatedMarker.js"
+    ];
   }
+
 });
