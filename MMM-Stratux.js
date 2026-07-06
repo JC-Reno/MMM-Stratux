@@ -40,6 +40,11 @@ Module.register("MMM-Stratux", {
     this.map = null;
     this.mapContainerEl = null;
     this.mapMarkers = { ownship: null, traffic: {} };
+    this.trafficIcons = {
+      default: null,
+      landing: null,
+      climbing: null
+    };
 
     this.sendSocketNotification("STRATUX_CONNECT", {
       host: this.config.stratuxHost,
@@ -328,20 +333,18 @@ Module.register("MMM-Stratux", {
       const key = ac._key;
       const pos = [ac.Lat, ac.Lng];
       const track = ac.Track || 0;
+      const iconState = this._trafficState(ac);
+      const markerIcon = this._getTrafficIcon(iconState);
 
       seen.add(key);
 
       if (!this.mapMarkers.traffic[key]) {
-        const planeIcon = L.icon({
-          iconUrl: "modules/MMM-Stratux/icons/plane-up.svg",
-          iconSize: [24, 24],
-          iconAnchor: [12, 12]
-        });
-
         const marker = L.marker(pos, {
-          icon: planeIcon,
+          icon: markerIcon,
           title: ac.Tail || key
         }).addTo(this.map);
+
+        marker._iconState = iconState;
 
         if (typeof marker.setRotationAngle === "function") {
           marker.setRotationAngle(track);
@@ -351,6 +354,11 @@ Module.register("MMM-Stratux", {
       } else {
         const marker = this.mapMarkers.traffic[key];
         marker.setLatLng(pos);
+
+        if (marker._iconState !== iconState) {
+          marker.setIcon(markerIcon);
+          marker._iconState = iconState;
+        }
 
         if (typeof marker.setRotationAngle === "function") {
           marker.setRotationAngle(track);
@@ -370,6 +378,31 @@ Module.register("MMM-Stratux", {
   _distNm(ac) {
     if (ac.Distance == null) return null;
     return ac.Distance / 6076.12;
+  },
+
+  _trafficState(ac) {
+    const vvel = ac.Vvel || 0;
+    if (vvel > 200) return "climbing";
+    if (ac.OnGround || vvel < -200) return "landing";
+    return "default";
+  },
+
+  _getTrafficIcon(state) {
+    if (!this.trafficIcons[state]) {
+      const iconFile = state === "climbing"
+        ? "plane-up-neon-green.svg"
+        : state === "landing"
+          ? "plane-up-magenta.svg"
+          : "plane-up-cyan.svg";
+
+      this.trafficIcons[state] = L.icon({
+        iconUrl: `modules/MMM-Stratux/icons/${iconFile}`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+    }
+
+    return this.trafficIcons[state];
   },
 
   _compassRose(deg) {
