@@ -46,13 +46,19 @@ Module.register("MMM-Stratux", {
       pruneSeconds: this.config.pruneSeconds
     });
 
-    this.mapInitTimer = setInterval(() => {
-      const mapDiv = document.getElementById("mmm-stratux-map");
-      if (mapDiv && !this.map) {
-        this._renderMap([]);   // initialize empty map
-        clearInterval(this.mapInitTimer);
-      }
-    }, 500);
+    if (this.config.showMap) {
+      this.mapInitTimer = setInterval(() => {
+        const mapDiv = document.getElementById("mmm-stratux-map");
+        if (this.map) {
+          clearInterval(this.mapInitTimer);
+          return;
+        }
+        if (mapDiv && !this.map) {
+          this._renderMap([]); // initialize map when position is known
+          if (this.map) clearInterval(this.mapInitTimer);
+        }
+      }, 500);
+    }
 
     setInterval(() => this.updateDom(0), this.config.updateInterval);
   },
@@ -131,13 +137,15 @@ Module.register("MMM-Stratux", {
 
     list = list.slice(0, this.config.maxAircraft);
 
-    // MAP ABOVE TABLE
-    const mapDiv = document.createElement("div");
-    mapDiv.id = "mmm-stratux-map";
-    mapDiv.className = "mmm-stratux-map";
-    wrapper.appendChild(mapDiv);
+    if (this.config.showMap) {
+      // MAP ABOVE TABLE
+      const mapDiv = document.createElement("div");
+      mapDiv.id = "mmm-stratux-map";
+      mapDiv.className = "mmm-stratux-map";
+      wrapper.appendChild(mapDiv);
 
-    this._updateMap(list);
+      this._renderMap(list);
+    }
 
     if (list.length === 0) {
       const msg = document.createElement("div");
@@ -279,6 +287,8 @@ Module.register("MMM-Stratux", {
   },
 
   _updateMap(list) {
+    if (!this.map) return;
+
     // Ownship
     if (this.situation && this.situation.GPSLatitude && this.situation.GPSLongitude) {
       const pos = [this.situation.GPSLatitude, this.situation.GPSLongitude];
