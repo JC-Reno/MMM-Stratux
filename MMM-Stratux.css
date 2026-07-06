@@ -74,7 +74,7 @@
 }
 
 .mmm-stratux-table th {
-    text-align: left;
+    text-align: right;
     padding: 3px 6px;
     font-size: 0.72em;
     font-weight: 600;
@@ -82,6 +82,10 @@
     text-transform: uppercase;
     color: #888;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mmm-stratux-table th:first-child {
+    text-align: left;
 }
 
 .mmm-stratux-table td {
@@ -192,7 +196,7 @@
 
 .mmm-stratux-map {
     width: 100%;
-    height: 260px;
+    height: 520px;
     margin-bottom: 10px;
     border-radius: 4px;
     overflow: hidden;
