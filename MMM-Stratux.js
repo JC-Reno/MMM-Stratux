@@ -38,6 +38,7 @@ Module.register("MMM-Stratux", {
     this.lastUpdate = null;
 
     this.map = null;
+    this.mapContainerEl = null;
     this.mapMarkers = { ownship: null, traffic: {} };
 
     this.sendSocketNotification("STRATUX_CONNECT", {
@@ -48,7 +49,7 @@ Module.register("MMM-Stratux", {
 
     if (this.config.showMap) {
       this.mapInitTimer = setInterval(() => {
-        const mapDiv = document.getElementById("mmm-stratux-map");
+        const mapDiv = this.mapContainerEl;
         if (this.map) {
           clearInterval(this.mapInitTimer);
           return;
@@ -96,7 +97,7 @@ Module.register("MMM-Stratux", {
           payload.forEach(k => {
             delete this.aircraft[k];
             if (this.mapMarkers.traffic[k]) {
-              this.map.removeLayer(this.mapMarkers.traffic[k]);
+              if (this.map) this.map.removeLayer(this.mapMarkers.traffic[k]);
               delete this.mapMarkers.traffic[k];
             }
           });
@@ -138,13 +139,19 @@ Module.register("MMM-Stratux", {
     list = list.slice(0, this.config.maxAircraft);
 
     if (this.config.showMap) {
-      // MAP ABOVE TABLE
-      const mapDiv = document.createElement("div");
-      mapDiv.id = "mmm-stratux-map";
-      mapDiv.className = "mmm-stratux-map";
-      wrapper.appendChild(mapDiv);
+      // Keep one persistent container so Leaflet is not detached on each updateDom.
+      if (!this.mapContainerEl) {
+        this.mapContainerEl = document.createElement("div");
+        this.mapContainerEl.id = `mmm-stratux-map-${this.identifier}`;
+        this.mapContainerEl.className = "mmm-stratux-map";
+      }
+      wrapper.appendChild(this.mapContainerEl);
 
       this._renderMap(list);
+
+      if (this.map && typeof this.map.invalidateSize === "function") {
+        setTimeout(() => this.map && this.map.invalidateSize(false), 0);
+      }
     }
 
     if (list.length === 0) {
@@ -252,8 +259,15 @@ Module.register("MMM-Stratux", {
    * MAP RENDERING (Leaflet)
    * ---------------------------------------------------------------------- */
   _renderMap(list) {
-    const mapDiv = document.getElementById("mmm-stratux-map");
+    const mapDiv = this.mapContainerEl;
     if (!mapDiv) return;
+
+    // If the map's container changed, recreate the Leaflet instance for the new node.
+    if (this.map && this.map.getContainer && this.map.getContainer() !== mapDiv) {
+      this.map.remove();
+      this.map = null;
+      this.mapMarkers = { ownship: null, traffic: {} };
+    }
 
     // If map already exists, update markers only
     if (this.map) {
@@ -275,7 +289,7 @@ Module.register("MMM-Stratux", {
 
     if (centerLat == null || centerLon == null) return;
 
-    this.map = L.map("mmm-stratux-map").setView([centerLat, centerLon], this.config.mapZoom);
+    this.map = L.map(mapDiv).setView([centerLat, centerLon], this.config.mapZoom);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18
