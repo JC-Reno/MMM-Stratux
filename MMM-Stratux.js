@@ -46,6 +46,14 @@ Module.register("MMM-Stratux", {
       pruneSeconds: this.config.pruneSeconds
     });
 
+    this.mapInitTimer = setInterval(() => {
+      const mapDiv = document.getElementById("mmm-stratux-map");
+      if (mapDiv && !this.map) {
+        this._renderMap([]);   // initialize empty map
+        clearInterval(this.mapInitTimer);
+      }
+    }, 500);
+
     setInterval(() => this.updateDom(0), this.config.updateInterval);
   },
 
@@ -129,7 +137,7 @@ Module.register("MMM-Stratux", {
     mapDiv.className = "mmm-stratux-map";
     wrapper.appendChild(mapDiv);
 
-    setTimeout(() => this._renderMap(list), 0);
+    this._updateMap(list);
 
     if (list.length === 0) {
       const msg = document.createElement("div");
