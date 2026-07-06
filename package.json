@@ -1,11 +1,25 @@
 {
-  "name": "MMM-StratuxTrafficWeather",
-  "version": "1.0.0",
-  "description": "MagicMirror module for Stratux ADS-B traffic and weather",
-  "main": "MMM-StratuxTrafficWeather.js",
+  "name": "MMM-Stratux",
+  "version": "2.0.0",
+  "description": "MagicMirror² module — live ADS-B traffic + map from a local Stratux receiver (REST polling)",
+  "main": "MMM-Stratux.js",
+  "scripts": {
+    "start": "echo \"Use MagicMirror to start this module.\""
+  },
+  "keywords": [
+    "MagicMirror",
+    "Stratux",
+    "ADS-B",
+    "aviation",
+    "traffic",
+    "map"
+  ],
   "author": "John",
   "license": "MIT",
   "dependencies": {
     "node-fetch": "^2.6.7"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

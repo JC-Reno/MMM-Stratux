@@ -1,116 +1,122 @@
-/* node_helper.js */
+/* MagicMirror²
+ * Module: MMM-Stratux — node_helper.js (REST polling)
+ * MIT Licensed.
+ */
+
+"use strict";
 
 const NodeHelper = require("node_helper");
 const fetch = require("node-fetch");
 
 module.exports = NodeHelper.create({
+
+  config: null,
+  pollTimer: null,
+  statusTimer: null,
+  connected: false,
+
   start() {
-    this.config = null;
-    this.timer = null;
-    this.backoffMs = 0;
+    console.log(`[${this.name}] REST helper started.`);
+  },
+
+  stop() {
+    this._cleanup();
   },
 
   socketNotificationReceived(notification, payload) {
     if (notification === "STRATUX_CONFIG") {
       this.config = payload;
-      this.startPolling();
+      this._cleanup();
+      this._startPolling();
+      this._startStatusPolling();
     }
   },
 
-  startPolling() {
-    if (this.timer) clearInterval(this.timer);
+  _startPolling() {
+    if (!this.config) return;
+    if (this.pollTimer) clearInterval(this.pollTimer);
 
-    this.timer = setInterval(() => {
-      this.pollStratux();
-    }, this.config.pollIntervalMs);
+    const interval = this.config.pollIntervalMs || 2000;
+
+    const poll = async () => {
+      try {
+        const base = `http://${this.config.stratuxHost}`;
+        const traffic = await this._fetchJson(`${base}/getTraffic`);
+        const situation = await this._fetchJson(`${base}/getSituation`);
+
+        this.connected = true;
+        this.sendSocketNotification("STRATUX_CONNECTED", {});
+
+        const normalizedTraffic = this._normalizeTraffic(traffic || []);
+        const normalizedSituation = situation || null;
+
+        this.sendSocketNotification("STRATUX_TRAFFIC_BULK", {
+          traffic: normalizedTraffic,
+          situation: normalizedSituation
+        });
+      } catch (err) {
+        console.error(`[${this.name}] Traffic poll error:`, err.message);
+        if (this.connected) {
+          this.connected = false;
+          this.sendSocketNotification("STRATUX_DISCONNECTED", {});
+        }
+      }
+    };
+
+    poll();
+    this.pollTimer = setInterval(poll, interval);
   },
 
-  async pollStratux() {
-    const base = `http://${this.config.stratuxHost}:${this.config.stratuxPort}`;
+  _startStatusPolling() {
+    if (!this.config) return;
+    if (this.statusTimer) clearInterval(this.statusTimer);
 
-    try {
-      const [traffic, weather, gps, ahrs, situation] = await Promise.all([
-        this.fetchJson(`${base}/getTraffic`),
-        this.fetchJson(`${base}/getWeather`),
-        this.fetchJson(`${base}/getGPS`),
-        this.fetchJson(`${base}/getAHRS`),
-        this.fetchJson(`${base}/getSituation`)
-      ]);
+    const interval = this.config.statusPollMs || 5000;
 
-      const normalizedTraffic = this.normalizeTraffic(traffic || []);
-      const normalizedWeather = this.normalizeWeather(weather || {});
-      const normalizedGps = this.normalizeGps(gps || {});
-      const normalizedAhrs = ahrs || null;
-      const normalizedSituation = situation || null;
+    const pollStatus = async () => {
+      try {
+        const base = `http://${this.config.stratuxHost}`;
+        const status = await this._fetchJson(`${base}/getStatus`);
+        this.sendSocketNotification("STRATUX_STATUS", status || null);
+      } catch (err) {
+        console.error(`[${this.name}] Status poll error:`, err.message);
+      }
+    };
 
-      this.sendSocketNotification("STRATUX_DATA", {
-        traffic: normalizedTraffic,
-        weather: normalizedWeather,
-        gps: normalizedGps,
-        ahrs: normalizedAhrs,
-        situation: normalizedSituation
-      });
-
-      this.backoffMs = 0;
-    } catch (err) {
-      console.error("Stratux poll error:", err);
-
-      this.backoffMs = Math.min(
-        this.backoffMs === 0 ? 2000 : this.backoffMs * 2,
-        60000
-      );
-
-      setTimeout(() => this.pollStratux(), this.backoffMs);
-    }
+    pollStatus();
+    this.statusTimer = setInterval(pollStatus, interval);
   },
 
-  async fetchJson(url) {
+  async _fetchJson(url) {
     const res = await fetch(url, { timeout: 4000 });
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
     return res.json();
   },
 
-  normalizeTraffic(raw) {
+  _normalizeTraffic(raw) {
     if (!Array.isArray(raw)) return [];
 
-    return raw
-      .map(ac => ({
-        Icao_addr: ac.Icao_addr || ac.icao || "",
-        Callsign: ac.Callsign || ac.callsign || "",
-        Altitude: ac.Altitude || ac.altitude || 0,
-        Speed: ac.Speed || ac.speed || 0,
-        Lat: ac.Lat || ac.lat || 0,
-        Lon: ac.Lon || ac.lon || 0,
-        Category: ac.Category || ac.category || ""
-      }))
-      .filter(ac => {
-        if (!ac.Lat || !ac.Lon) return false;
-        if (ac.Altitude < this.config.minAltitudeFt) return false;
-        return true;
-      });
+    return raw.map(ac => ({
+      Icao_addr: ac.Icao_addr || ac.icao || null,
+      Tail: ac.Tail || ac.tail || "",
+      Alt: ac.Alt || ac.alt || 0,
+      Vvel: ac.Vvel || ac.vvel || 0,
+      Speed: ac.Speed || ac.speed || 0,
+      Speed_valid: ac.Speed_valid ?? true,
+      Track: ac.Track || ac.track || 0,
+      Lat: ac.Lat || ac.lat || null,
+      Lon: ac.Lon || ac.lon || null,
+      Distance: ac.Distance || ac.distance || null,
+      Bearing: ac.Bearing || ac.bearing || null,
+      OnGround: ac.OnGround || ac.onGround || false,
+      Position_valid: ac.Position_valid ?? (ac.Lat != null && ac.Lon != null),
+      Squawk: ac.Squawk || ac.squawk || null,
+      SignalLevel: ac.SignalLevel || ac.signalLevel || null
+    }));
   },
 
-  normalizeWeather(raw) {
-    if (!raw) return {};
-
-    return {
-      METAR: raw.METAR || raw.metar || null,
-      TAF: raw.TAF || raw.taf || null,
-      Station: raw.Station || raw.station || null,
-      TempC: raw.TempC || raw.tempC || null,
-      Wind: raw.Wind || raw.wind || null,
-      Visibility: raw.Visibility || raw.visibility || null
-    };
-  },
-
-  normalizeGps(raw) {
-    if (!raw) return null;
-
-    return {
-      lat: raw.Lat || raw.lat || 0,
-      lon: raw.Lon || raw.lon || 0,
-      altitude: raw.Altitude || raw.altitude || 0,
-      groundspeed: raw.GroundSpeed || raw.groundspeed || 0
-    };
+  _cleanup() {
+    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+    if (this.statusTimer) { clearInterval(this.statusTimer); this.statusTimer = null; }
   }
 });
